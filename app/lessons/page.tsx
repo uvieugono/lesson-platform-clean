@@ -13,10 +13,10 @@ import {
 import axios from 'axios';
 import { LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts';
 import { motion } from 'framer-motion';
-import { Card, CardTitle, CardContent } from '../../components/ui/card';
-import ErrorDisplay from '../../components/ErrorDisplay';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import ErrorDisplay from '@/components/ErrorDisplay';
 // Alias the imported api to localApi
-import { api as localApi } from '../../services/api-service';
+import { api as localApi } from '@/services/api-service';
 import { showErrorToast } from '../utils/error-utils'; // Adjusted path
 
 console.log('ErrorDisplay component:', ErrorDisplay);
