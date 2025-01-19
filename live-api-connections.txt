@@ -1,0 +1,13 @@
+https://lesson-manager-914922463191.us-central1.run.app
+
+main service url for Solynta Academy
+
+https://lesson-manager-914922463191.us-central1.run.app/
+https://lesson-manager-914922463191.us-central1.run.app/initialize-lesson
+https://lesson-manager-914922463191.us-central1.run.app/pause-lesson
+https://lesson-manager-914922463191.us-central1.run.app/resume-lesson
+https://lesson-manager-914922463191.us-central1.run.app/ai-tutor
+https://lesson-manager-914922463191.us-central1.run.app/generate-notes
+https://lesson-manager-914922463191.us-central1.run.app/process-interaction
+https://lesson-manager-914922463191.us-central1.run.app/save-progress
+
