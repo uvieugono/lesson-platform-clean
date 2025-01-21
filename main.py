@@ -1,22 +1,62 @@
-import os
+# ===== IMPORTS =====
+import random  # Add this import
+from datetime import datetime, timezone  # Add timezone import
 from flask import Flask, request, jsonify, Request  # Added Request import
+import os
+import json
+import traceback
 from firebase_admin import firestore, initialize_app, credentials
 import firebase_admin
 import logging
 import uuid
-from datetime import datetime, timezone  # Add timezone import
 from flask_cors import CORS
 import google.generativeai as genai
 from dotenv import load_dotenv
 from google.api_core import exceptions
 from google.generativeai.types import GenerationConfig  # Add this import
+from jsonschema import validate, ValidationError  # Add this import
+from typing import Dict, List  # Add this import
+import re  # Add this import
+from json import JSONEncoder
 
-# Configure logging
+# Configure logging FIRST
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)  # Define logger here
+
+# ===== RESPONSE HANDLER =====
+def create_response(success: bool, message: str, data=None, status_code=200):
+    """Construct standardized API responses"""
+    response = {
+        'success': success,
+        'message': message,
+        'timestamp': datetime.now(timezone.utc).isoformat()
+    }
+    
+    if data:
+        response['data'] = data
+        
+    logger.debug(f"Constructed response: {response}")
+    # Use the custom encoder to serialize the response
+    return json.dumps(response, cls=FirestoreJSONEncoder), status_code, {'Content-Type': 'application/json'}
+
+# Initialize Flask app first
+app = Flask(__name__)
+# app.config['SERVER_NAME'] = 'localhost:8080'  # Remove this line
+CORS(app, origins=['*'], allow_headers=['Content-Type'], methods=['POST'])
+
+# Add a custom JSON encoder to handle Firestore Sentinel objects
+class FirestoreJSONEncoder(JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, type(firestore.SERVER_TIMESTAMP)):
+            # Replace SERVER_TIMESTAMP with current UTC timestamp
+            return datetime.now(timezone.utc).isoformat()
+        return super().default(obj)
+
+# Update the Flask app configuration to use the custom encoder
+app.json_encoder = FirestoreJSONEncoder
 
 # Initialize Firebase Admin
 if not firebase_admin._apps:
@@ -26,9 +66,10 @@ if not firebase_admin._apps:
             firebase_admin.initialize_app(cred)
         else:
             firebase_admin.initialize_app()
-        logger.info("Firebase initialized successfully")
+        logger.info("Firebase initialized successfully")  # Now safe to use logger
     except Exception as e:
         logger.error(f"Error initializing Firebase: {e}")
+        raise
 
 # Initialize Firestore
 try:
@@ -36,44 +77,156 @@ try:
     logger.info("Firestore client initialized successfully")
 except Exception as e:
     logger.error(f"Error initializing Firestore client: {e}")
-
-# Initialize Flask app
-app = Flask(__name__)
-# Allow all origins for development, adjust as needed for production
-CORS(app, origins=['*'], allow_headers=['Content-Type'], methods=['POST'])
+    raise
 
 # Initialize Gemini
-genai.configure(api_key=os.getenv('PALM_API_KEY'), transport='rest')
+load_dotenv()
+genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
 model = genai.GenerativeModel('gemini-pro')
 
-def create_response(success: bool, message: str, data=None, status_code=200):
-    response = {
-        'success': success,
-        'message': message,
-        'timestamp': datetime.now(timezone.utc).isoformat()  # Updated line
+# ===== DYNAMIC COMPLIANCE SYSTEM =====
+BLOOMS_VERBS = {
+    # Year-based curriculum (UK/Nigeria)
+    "Year 1": ["identify", "name", "recall"],
+    "Year 2": ["describe", "sort", "match"],
+    "Year 3": ["explain", "compare", "classify"],
+    "Year 4": ["demonstrate", "organize", "predict"],
+    "Year 5": ["differentiate", "experiment", "hypothesize"],
+    "Year 6": ["argue", "critique", "reconstruct"],
+    "Year 7": ["analyze", "model", "engineer"],
+    "Year 8": ["evaluate", "synthesize", "validate"],
+    "Year 9": ["design", "optimize", "reimagine"],
+    
+    # Nigerian curriculum specific
+    "Junior Secondary School 1": ["investigate", "document", "illustrate"],
+    "Junior Secondary School 2": ["correlate", "systematize", "troubleshoot"],
+    "Junior Secondary School 3": ["prototype", "quantify", "reconfigure"],
+    "Primary 1-6": ["recognize", "sequence", "categorize"],
+    "Nursery": ["observe", "imitate", "respond"]
+}
+
+INTERACTIVE_TOOLS = {
+    # Core subjects
+    "Mathematics": ["geometry puzzle builder", "interactive equation solver", "fraction visualizer"],
+    "English Language": ["sentence structure simulator", "vocabulary matching game", "interactive storytelling"],
+    "Science": ["virtual lab experiments", "ecosystem simulator", "molecular modeler"],
+    
+    # Technology/AI
+    "Artificial Intelligence": ["AI ethics scenario simulator", "neural network visualizer", "machine learning sandbox"],
+    "Computing": ["code debugging challenges", "algorithm flowchart builder", "cybersecurity scenario trainer"],
+    
+    # Creative arts
+    "Art and Design": ["digital color mixer", "perspective grid tool", "art style analyzer"],
+    "Music": ["rhythm pattern builder", "instrument sound explorer", "music theory quizzer"],
+    
+    # Languages
+    "Arabic Language": ["script writing practice", "vocabulary pronunciation coach", "cultural context scenarios"],
+    "French Language": ["conjugation puzzle", "immersion scenario builder", "accent trainer"],
+    "Yoruba Language": ["proverb matching game", "tone recognition exercises", "cultural storytelling"],
+    
+    # Vocational
+    "Entrepreneurship": ["business plan simulator", "market analysis dashboard", "investment risk calculator"],
+    "Financial Literacy": ["budget balancing game", "interest rate visualizer", "stock market simulator"],
+    
+    # Specialized
+    "Physical and Health Education": ["exercise form analyzer", "nutrition planner", "sports strategy builder"],
+    "Islamic Studies": ["prayer time calculator", "Quran verse connector", "historical timeline explorer"]
+}
+
+LESSON_SCHEMA = {
+    "type": "object",
+    "required": ["title", "key_concepts", "sections"],
+    "properties": {
+        "title": {"type": "string"},
+        "key_concepts": {
+            "type": "array",
+            "items": {"type": "string"},
+            "minItems": 3
+        },
+        "sections": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "duration": {"type": "number"},
+                    "content": {"type": "string"},
+                    "interactive_element": {"type": "string"}
+                }
+            }
+        },
+        "quizzes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "question": {"type": "string"},
+                    "options": {"type": "array"},
+                    "answer": {"type": "string"}
+                }
+            }
+        },
+        "metadata": {
+            "type": "object",
+            "required": ["difficulty_level", "estimated_duration"],
+            "properties": {
+                "difficulty_level": {"enum": ["easy", "intermediate", "advanced"]},
+                "tags": {"type": "array", "items": {"type": "string"}}
+            }
+        },
+        "interactiveElements": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "type": {"enum": ["graph", "animation", "flashcard", "text"]},
+                    "title": {"type": "string"},
+                    "data": {"type": "array"},  # For graphs
+                    "animationConfig": {"type": "object"},  # For animations
+                    "flashcards": {"type": "array"}  # For flashcards
+                }
+            }
+        }
     }
-    if data is not None:
-        response['data'] = data
+}
 
-    # Log the response for debugging
-    logger.info(f"Sending response: {response}")
-    return jsonify(response), status_code
+def validate_lesson(data):
+    try:
+        validate(instance=data, schema=LESSON_SCHEMA)
+        return True
+    except ValidationError as e:
+        logger.error(f"Validation failed: {e.message}")
+        return False
 
-def find_lesson_by_ref(lesson_ref: str, country: str, curriculum: str, grade: str, level: str, subject: str):
-    doc_path = (
-        f"countries/{country}/curriculums/{curriculum}/"
-        f"grades/{grade}/levels/{level}/subjects/{subject}/lessonRef/{lesson_ref}"
-    )
-    logger.debug(f"Looking for document at: {doc_path}")
+def validate_blooms_verbs(content, grade_level):
+    required_verbs = BLOOMS_VERBS.get(grade_level, [])
+    content_lower = content.lower()
     
-    doc_ref = db.document(doc_path)
-    doc = doc_ref.get()
+    missing_verbs = [verb for verb in required_verbs if verb not in content_lower]
     
-    if not doc.exists:
-        logger.error(f"Document not found at path: {doc_path}")
-        raise ValueError(f"Document not found at path: {doc_path}")
+    if missing_verbs:
+        raise ValidationError(
+            f"Lesson content missing required Bloom's verbs for {grade_level}: {', '.join(missing_verbs)}"
+        )
     
-    return doc_ref.path, doc.to_dict()
+    return True
+
+def parse_lesson_path(path: str) -> dict:
+    """Parses the lesson path and returns a dictionary with relevant information."""
+    parts = path.split('/')
+    if len(parts) != 13:  # Check if the path has the expected number of segments
+        logger.error(f"Invalid path format: {path}")
+        return {}
+
+    data = {
+        'country': parts[1],
+        'curriculum': parts[3],
+        'grade': parts[5],
+        'level': parts[7],
+        'subject': parts[9],
+        'lesson_ref': parts[11]
+    }
+    return data
 
 # The following try-except block was causing indentation errors - it has been removed
 # try:
@@ -85,65 +238,246 @@ def find_lesson_by_ref(lesson_ref: str, country: str, curriculum: str, grade: st
 #     # ...
 
 def initialize_lesson_data(student_id, lesson_ref, lesson_path, lesson_data):
-    """Centralized function for initializing sessions and lesson states"""
-    # Enhanced lesson data remains the same
-    enhanced_lesson_data = {
-        'lessonRef': lesson_ref,
-        'title': lesson_data.get('title', 'Untitled Lesson'),
-        'content': {
-            'introduction': lesson_data.get('introduction', ''),
-            'sections': lesson_data.get('sections', []),
-            'key_concepts': lesson_data.get('key_concepts', []),
-            'examples': lesson_data.get('examples', [])
-        },
-        'interactiveElements': lesson_data.get('interactiveElements', []),
-        'quizzes': lesson_data.get('quizzes', []),
-        'examContent': lesson_data.get('examContent', []),
-        'objectives': lesson_data.get('objectives', []),
-        'prerequisites': lesson_data.get('prerequisites', []),
-        'resources': lesson_data.get('resources', []),
-        'metadata': {
-            'difficulty_level': lesson_data.get('difficulty_level', 'intermediate'),
-            'estimated_duration': lesson_data.get('estimated_duration', 30),
-            'tags': lesson_data.get('tags', []),
-            'subject': lesson_data.get('subject', ''),
-            'topic': lesson_data.get('topic', '')
+    """
+    Centralized function for initializing sessions and lesson states.
+    Handles any subject dynamically based on lesson data.
+    """
+    logger.info(f"Initializing lesson data for lesson: {lesson_ref}")
+    
+    try:
+        # Validate input data
+        if not lesson_data:
+            raise ValueError("No lesson data provided")
+
+        # Extract subject and metadata
+        subject = lesson_data.get('subject', '')
+        metadata = lesson_data.get('metadata', {})
+        
+        logger.debug(f"Processing lesson for subject: {subject}")
+
+        # Ensure we have the minimum required data structure
+        lesson_data.setdefault('key_concepts', [])
+        lesson_data.setdefault('sections', [])
+        lesson_data.setdefault('interactiveElements', [])
+        lesson_data.setdefault('quizzes', [])
+
+        # Get subject-specific tools or use defaults
+        subject_tools = INTERACTIVE_TOOLS.get(subject, [])
+        if not subject_tools:
+            logger.warning(f"No specific tools found for {subject}, using generic interactive tools")
+            subject_tools = [
+                "virtual whiteboard",
+                "interactive quiz",
+                "digital flashcards",
+                "progress tracker",
+                "discussion board",
+                "practice exercises",
+                "visual aids",
+                "collaborative workspace"
+            ]
+
+        # Update interactive elements ensuring we have at least basic interactivity
+        for section in lesson_data.get('sections', []):
+            if 'interactive_element' not in section:
+                section['interactive_element'] = random.choice(subject_tools)
+                logger.debug(f"Added interactive element: {section['interactive_element']}")
+
+        # Create enhanced lesson data with dynamic fields
+        enhanced_lesson_data = {
+            'lessonRef': lesson_ref,
+            'title': lesson_data.get('title', 'Untitled Lesson'),
+            'content': {
+                'introduction': lesson_data.get('introduction', ''),
+                'sections': lesson_data.get('sections', []),
+                'key_concepts': lesson_data.get('key_concepts', []),
+                'examples': lesson_data.get('examples', [])
+            },
+            'interactiveElements': lesson_data.get('interactiveElements', []),
+            'quizzes': lesson_data.get('quizzes', []),
+            'examContent': lesson_data.get('examContent', []),
+            'objectives': lesson_data.get('objectives', []),
+            'prerequisites': lesson_data.get('prerequisites', []),
+            'resources': lesson_data.get('resources', []),
+            'metadata': {
+                'difficulty_level': metadata.get('difficulty_level', 'intermediate'),
+                'estimated_duration': metadata.get('estimated_duration', 30),
+                'tags': metadata.get('tags', []),
+                'subject': subject,
+                'topic': lesson_data.get('topic', ''),
+                'grade_level': lesson_data.get('gradeLevel', ''),
+                'curriculum_alignment': lesson_data.get('curriculumAlignment', {})
+            }
         }
-    }
 
-    # Create session - moved from initialize_lesson route
-    session_id = f"session_{str(uuid.uuid4())}"
-    session_data = {
-        'session_id': session_id,
-        'student_id': student_id,
-        'lesson_ref': lesson_ref,
-        'lesson_path': lesson_path,
-        'status': 'active',
-        'created_at': firestore.SERVER_TIMESTAMP,
-        'last_interaction': firestore.SERVER_TIMESTAMP,
-        'progress': 0,
-        'completion_status': 'in_progress'
-    }
-    db.collection('lesson_sessions').document(session_id).set(session_data)
+        # Generate unique session ID
+        session_id = f"session_{str(uuid.uuid4())}"
+        
+        # Create session data
+        session_data = {
+            'session_id': session_id,
+            'student_id': student_id,
+            'lesson_ref': lesson_ref,
+            'lesson_path': lesson_path,
+            'status': 'active',
+            'created_at': firestore.SERVER_TIMESTAMP,
+            'last_interaction': firestore.SERVER_TIMESTAMP,
+            'progress': 0,
+            'completion_status': 'in_progress',
+            'last_modified': firestore.SERVER_TIMESTAMP
+        }
+        
+        logger.info(f"Creating session with ID: {session_id}")
+        try:
+            db.collection('lesson_sessions').document(session_id).set(session_data)
+        except Exception as e:
+            logger.error(f"Error creating session document: {e}", exc_info=True)
+            raise  # Re-raise the exception to be handled by the caller
 
-    # Create lesson state - moved from initialize_lesson route
-    lesson_state = {
-        'current_section': 0,
-        'completed_sections': [],
-        'quiz_attempts': 0,
-        'current_score': 0,
-        'interactive_elements_state': {},
-        'time_spent': 0,
-        'total_duration': lesson_data.get('metadata', {}).get('estimated_duration', 30)
-    }
-    db.collection('lesson_states').document(session_id).set(lesson_state)
+        # Create lesson state with dynamic duration
+        lesson_state = {
+            'current_section': 0,
+            'completed_sections': [],
+            'quiz_attempts': 0,
+            'current_score': 0,
+            'interactive_elements_state': {},
+            'time_spent': 0,
+            'total_duration': metadata.get('estimated_duration', 30),
+            'last_activity': firestore.SERVER_TIMESTAMP,
+            'interaction_history': [],
+            'learning_path': {
+                'current_module': 0,
+                'modules_completed': [],
+                'next_objectives': enhanced_lesson_data['objectives'][:3] if enhanced_lesson_data['objectives'] else []
+            }
+        }
+        
+        logger.info(f"Creating lesson state for session: {session_id}")
+        try:
+            db.collection('lesson_states').document(session_id).set(lesson_state)
+        except Exception as e:
+            logger.error(f"Error creating lesson state document: {e}", exc_info=True)
+            raise  # Re-raise the exception
 
-    return session_id, enhanced_lesson_data, lesson_state
+        return session_id, enhanced_lesson_data, lesson_state
 
+    except Exception as e:
+        if tool not in allowed_tools:
+            section["interactive_element"] = random.choice(allowed_tools)
+            logger.warning(f"Replaced invalid tool {tool} with {section['interactive_element']}")
+
+    # Ensure minimum 3 interactive elements
+    interactive_count = sum(1 for section in lesson_data["sections"] if section.get("interactive_element"))
+    if interactive_count < 3:
+        logger.info("Adding default interactive elements")
+        lesson_data["sections"].extend(get_default_interactives(subject))
+    
+    return lesson_data
+
+def calculate_progress(lesson_state):
+    """
+    Calculate the progress of the lesson based on completed sections.
+    """
+    total_sections = len(lesson_state.get('sections', []))
+    completed_sections = len(lesson_state.get('completed_sections', []))
+    if total_sections == 0:
+        return 0
+    return (completed_sections / total_sections) * 100
+
+def generate_lesson_prompt(grade, subject, curriculum):
+    return f"""
+    Generate a COMPLETE lesson plan for {grade} following {curriculum} standards.
+    Include ALL sections below with STRICT adherence to:
+    
+    - 3 interactive elements from: {INTERACTIVE_TOOLS.get(subject, [])}
+    - 2 quizzes (1 multiple-choice, 1 practical)
+    - Nigerian context examples
+    - Bloom's verbs: {BLOOMS_VERBS.get(grade, [])}
+    
+    Respond ONLY in this JSON format:
+    {{
+        "title": "Creative Title",
+        "key_concepts": ["Concept 1 (with Nigerian example)", ...],
+        "sections": [
+            {{
+                "title": "Section Title",
+                "duration": number,
+                "content": "Detailed content",
+                "interactive_element": "valid_tool_name"
+            }},...
+        ],
+        "quizzes": [
+            {{
+                "type": "multiple-choice",
+                "question": "...",
+                "options": ["...", ...],
+                "answer": "..."
+            }},...
+        ],
+        "metadata": {{
+            "difficulty_level": "easy|intermediate|advanced",
+            "estimated_duration": total_minutes,
+            "tags": ["...", ...]
+        }}
+    }}
+    """
+
+def enhance_nigerian_context(lesson_data):
+    nigerian_keywords = ["Nigeria", "Nigerian", "Naija", "Lagos", "Abuja"]
+    
+    # Check key concepts
+    if not any(keyword in concept for concept in lesson_data["key_concepts"] for keyword in nigerian_keywords):
+        lesson_data["key_concepts"].append("Nigerian curriculum alignment")
+    
+    # Enhance examples
+    for section in lesson_data["sections"]:
+        if "example" in section["content"].lower() and "Nigeria" not in section["content"]:
+            section["content"] += f"\n(Nigerian Example: {get_nigerian_example(section['title'])})"
+    
+    return lesson_data
+
+def validate_response(gemini_response):
+    try:
+        data = json.loads(gemini_response)
+        validate(instance=data, schema=LESSON_SCHEMA)
+        
+        # Check for interactive elements
+        if sum(1 for section in data['sections'] if section.get('interactive_element')) < 2:
+            return False
+            
+        # Check assessment types
+        if not any(q['type'] == 'practical' for q in data['quizzes']):
+            return False
+            
+        return True
+    except (json.JSONDecodeError, ValidationError):
+        return False
+
+def adjust_difficulty(lesson_data, student_history):
+    base_difficulty = lesson_data['metadata']['difficulty_level']
+    
+    if student_history.get('average_score', 0) > 80:
+        lesson_data['metadata']['difficulty_level'] = "advanced"
+        # Add advanced content
+        lesson_data['sections'].append({
+            "title": "Advanced Application",
+            "content": "Nigeria-specific case study analysis",
+            "interactive_element": "case_study_simulator"
+        })
+    elif student_history.get('average_score', 0) < 50:
+        lesson_data['metadata']['difficulty_level'] = "easy"
+        # Simplify content
+        for section in lesson_data['sections']:
+            section['content'] = simplify_text(section['content'])
+    
+    return lesson_data
+
+# ===== ROUTES =====
 @app.route('/initialize-lesson', methods=['POST'])
 def initialize_lesson():
     try:
         data = request.get_json()
+        logger.debug(f"Received initialization request with data: {data}")
+
         student_id = data.get('student_id')
         lesson_ref = data.get('lesson_ref')
         country = data.get('country')
@@ -151,20 +485,85 @@ def initialize_lesson():
         grade = data.get('grade')
         level = data.get('level')
         subject = data.get('subject')
+        learning_objectives = data.get('learningObjectives', [])  # Get objectives from request
 
-        # Validation
+        # Validation with detailed logging
         if not all([student_id, lesson_ref, country, curriculum, grade, level, subject]):
-            return create_response(False, 'Missing required fields', status_code=400)
+            missing = [field for field, value in {
+                'student_id': student_id,
+                'lesson_ref': lesson_ref,
+                'country': country,
+                'curriculum': curriculum,
+                'grade': grade,
+                'level': level,
+                'subject': subject
+            }.items() if not value]
+            logger.error(f"Missing required fields: {missing}")
+            return create_response(False, f'Missing required fields: {", ".join(missing)}', status_code=400)
 
-        # Find lesson document
-        lesson_path, lesson_data = find_lesson_by_ref(
-            lesson_ref, country, curriculum, grade, level, subject
-        )
+        # Log before finding lesson
+        logger.debug(f"Attempting to find lesson with ref: {lesson_ref}")
+        try:
+            # Try to find lesson
+            lesson_path, lesson_data = find_lesson_by_ref(
+                lesson_ref, country, curriculum, grade, level, subject
+            )
+            logger.debug(f"Found lesson at path: {lesson_path}")
+            logger.debug(f"Lesson data: {lesson_data}")
 
-        # Single point of initialization
-        session_id, enhanced_data, lesson_state = initialize_lesson_data(
-            student_id, lesson_ref, lesson_path, lesson_data
-        )
+            # Update the learning objectives in lesson_data
+            lesson_data['learningObjectives'] = learning_objectives
+
+        except Exception as e:
+            logger.error(f"Error finding lesson: {str(e)}", exc_info=True)
+            return create_response(False, str(e), status_code=404)
+
+        # Log before initialization
+        logger.debug("Attempting to initialize lesson data")
+        try:
+            # Initialize lesson
+            session_id, enhanced_data, lesson_state = initialize_lesson_data(
+                student_id, lesson_ref, lesson_path, lesson_data
+            )
+            logger.debug(f"Lesson initialized with session_id: {session_id}")
+
+            # Generate lesson prompt with the learning objectives
+            lesson_prompt = f"""
+            Generate a COMPLETE lesson plan for {grade} students in {country} following {curriculum}.
+            Include ALL sections below:
+
+            # Required Format
+            ## Lesson Title: {lesson_data.get('lessonTitle', '[Creative Title Here]')}
+
+            ### Key Concepts (3-5 items):
+            {', '.join(lesson_data.get('key_concepts', []))}
+
+            ### Interactive Elements:
+            {', '.join([step.get('tool', '') for step in lesson_data.get('instructionalSteps', [])])}
+
+            ### Lesson Sections (45 minute total):
+            1. Introduction ({lesson_data.get('introduction', {}).get('sectionTimeLength', '5 min')}):
+                - Hook: {lesson_data.get('introduction', {}).get('text', '')}
+                - Objectives: {', '.join(learning_objectives)}
+
+            2. Core Content:
+                {', '.join([step.get('description', '') for step in lesson_data.get('instructionalSteps', [])])}
+
+            3. Practice Activities:
+                {', '.join(lesson_data.get('extensionActivities', []))}
+
+            4. Assessment:
+                - {len(lesson_data.get('quizzesAndAssessments', []))} quiz questions
+                - Practical application questions
+
+            ### Differentiation Strategies:
+            {lesson_data.get('adaptiveStrategies', '')}
+
+            Format response as JSON with all relevant sections."""
+
+        except Exception as e:
+            logger.error(f"Error initializing lesson data: {str(e)}", exc_info=True)
+            return create_response(False, f"Error initializing lesson: {str(e)}", status_code=500)
 
         return create_response(
             True,
@@ -172,27 +571,14 @@ def initialize_lesson():
             {
                 'session_id': session_id,
                 'lessonData': enhanced_data,
-                'state': lesson_state
+                'state': lesson_state,
+                'lessonPrompt': lesson_prompt
             }
         )
 
     except Exception as e:
-        logger.error(f"Error initializing lesson: {e}")
-        return create_response(False, str(e), status_code=500)
-
-def fetch_lesson_data(lesson_ref):
-    """
-    Fetch lesson data from Firestore based on the lesson_ref.
-    """
-    try:
-        # Query Firestore for the lesson document
-        lesson_query = db.collection('lessons').where('lessonRef', '==', lesson_ref).get()
-        if lesson_query:
-            return lesson_query[0].to_dict()  # Return the first matching document
-        return None
-    except Exception as e:
-        logger.error(f"Error fetching lesson data: {e}")
-        return None
+        logger.error(f"Unexpected error in initialize_lesson: {str(e)}", exc_info=True)
+        return create_response(False, "Internal server error", status_code=500)
 
 @app.route('/pause-lesson', methods=['POST'])
 def pause_lesson():
@@ -212,7 +598,8 @@ def pause_lesson():
         })
         return create_response(True, 'Lesson paused successfully')
     except Exception as e:
-        logger.error(f"Error pausing lesson: {e}")
+        logger.error(f"Full error details: {traceback.format_exc()}")
+        logger.debug(f"Current create_response type: {type(create_response)}")
         return create_response(False, str(e), status_code=500)
 
 @app.route('/resume-lesson', methods=['POST'])
@@ -231,7 +618,8 @@ def resume_lesson():
         })
         return create_response(True, 'Lesson resumed successfully')
     except Exception as e:
-        logger.error(f"Error resuming lesson: {e}")
+        logger.error(f"Full error details: {traceback.format_exc()}")
+        logger.debug(f"Current create_response type: {type(create_response)}")
         return create_response(False, str(e), status_code=500)
 
 @app.route('/generate-notes', methods=['POST'])
@@ -256,57 +644,23 @@ def generate_notes():
         return create_response(True, 'Notes generated successfully', note_data)
 
     except Exception as e:
-        logger.error(f"Error generating notes: {e}")
+        logger.error(f"Full error details: {traceback.format_exc()}")
+        logger.debug(f"Current create_response type: {type(create_response)}")
         return create_response(False, str(e), status_code=500)
 
-def calculate_engagement(time_spent: int, total_duration: int) -> float:
-    """Calculate engagement as percentage of time spent vs total lesson duration"""
-    if total_duration <= 0:
-        return 0.0  # Prevent division by zero
-    
-    engagement = (time_spent / total_duration) * 100
-    return min(engagement, 100)  # Cap at 100%
-
-def calculate_avg_response_time(interactions):
-    # Placeholder function to calculate average response time
-    total_response_time = sum(interaction.get('response_time', 0) for interaction in interactions)
-    return total_response_time / len(interactions) if interactions else 0
-
-def calculate_pause_analysis(interactions):
-    # Placeholder function to analyze pauses
-    return {"total_pauses": sum(1 for interaction in interactions if interaction.get('type') == 'pause')}
-
-def aggregate_tool_usage(interactions):
-    # Placeholder function to aggregate tool usage
-    tool_usage = {}
-    for interaction in interactions:
-        tools = interaction.get('tool_usage', {})
-        for tool, usage in tools.items():
-            if tool not in tool_usage:
-                tool_usage[tool] = 0
-            tool_usage[tool] += usage
-    return tool_usage
-
-def update_topics(doc_data, interaction_data, topic_type):
-    # Placeholder function to update topics mastered or struggled
-    existing_topics = set(doc_data.get(f'topics_{topic_type}', []))
-    new_topics = set(interaction_data.get(f'topics_{topic_type}', []))
-    return list(existing_topics.union(new_topics))
-
-def categorize_bloom_level(interaction_text):
-    # Example: Using keywords to determine Bloom's level
-    keywords = {
-        "remembering": ["define", "list", "recall"],
-        "understanding": ["explain", "summarize", "describe"],
-        "applying": ["use", "solve", "demonstrate"],
-        "analyzing": ["compare", "contrast", "differentiate"],
-        "evaluating": ["assess", "critique", "justify"],
-        "creating": ["design", "develop", "compose"]
-    }
-    for level, verbs in keywords.items():
-        if any(verb in interaction_text.lower() for verb in verbs):
-            return level
-    return "unknown"
+def fetch_lesson_data(lesson_ref):
+    """
+    Fetch lesson data from Firestore based on the lesson_ref.
+    """
+    try:
+        # Query Firestore for the lesson document
+        lesson_query = db.collection('lessons').where('lessonRef', '==', lesson_ref).get()
+        if lesson_query:
+            return lesson_query[0].to_dict()  # Return the first matching document
+        return None
+    except Exception as e:
+        logger.error(f"Error fetching lesson data: {e}")
+        return None
 
 @app.route('/process-interaction', methods=['POST'])
 def process_interaction():
@@ -415,11 +769,12 @@ def process_interaction():
         return create_response(True, "Interaction processed successfully", doc_data)
 
     except Exception as e:
-        logger.error(f"Error processing interaction: {e}")
+        logger.error(f"Full error details: {traceback.format_exc()}")
+        logger.debug(f"Current create_response type: {type(create_response)}")
         return create_response(False, str(e), status_code=500)
 
 @app.route('/save-progress', methods=['POST'])
-def save_progress(request):  # <-- Add this parameter
+def save_progress():  # <-- Removed extra parameter
     try:
         data = request.get_json()
         session_id = data.get('session_id')
@@ -439,7 +794,8 @@ def save_progress(request):  # <-- Add this parameter
 
         return create_response(True, 'Progress saved successfully')
     except Exception as e:
-        logger.error(f"Error saving progress: {e}")
+        logger.error(f"Full error details: {traceback.format_exc()}")
+        logger.debug(f"Current create_response type: {type(create_response)}")
         return create_response(False, str(e), status_code=500)
 
 @app.route('/ai-tutor', methods=['POST'])
@@ -459,7 +815,8 @@ def ai_tutor():
 
         return create_response(True, 'Response generated successfully', {'explanation': explanation})
     except Exception as e:
-        logger.error(f"Error in AI Tutor: {e}")
+        logger.error(f"Full error details: {traceback.format_exc()}")
+        logger.debug(f"Current create_response type: {type(create_response)}")
         return create_response(False, str(e), status_code=500)
 
 @app.route('/generate-summary', methods=['POST'])
@@ -477,7 +834,8 @@ def generate_summary():
 
         return create_response(True, 'Summary generated successfully', {'summary': summary})
     except Exception as e:
-        logger.error(f"Error generating summary: {e}")
+        logger.error(f"Full error details: {traceback.format_exc()}")
+        logger.debug(f"Current create_response type: {type(create_response)}")
         return create_response(False, str(e), status_code=500)
 
 @app.route('/generate-blooms-summary', methods=['POST'])
@@ -495,7 +853,8 @@ def generate_blooms_summary():
 
         return create_response(True, 'Bloom\'s summary generated successfully', {'summary': summary})
     except Exception as e:
-        logger.error(f"Error generating Bloom's summary: {e}")
+        logger.error(f"Full error details: {traceback.format_exc()}")
+        logger.debug(f"Current create_response type: {type(create_response)}")
         return create_response(False, str(e), status_code=500)
 
 @app.route('/save-lesson-notes', methods=['POST'])
@@ -535,7 +894,8 @@ def save_lesson_notes():
 
         return create_response(True, "Lesson notes saved successfully.")
     except Exception as e:
-        logger.error(f"Error saving lesson notes: {e}")
+        logger.error(f"Full error details: {traceback.format_exc()}")
+        logger.debug(f"Current create_response type: {type(create_response)}")
         return create_response(False, str(e), status_code=500)
 
 @app.route('/generate-lesson-notes', methods=['POST'])
@@ -544,16 +904,6 @@ def generate_lesson_notes():
         # Parse request data
         data = request.get_json()
         lesson_ref = data.get('lesson_ref')
-        country = data.get('country')
-        curriculum = data.get('curriculum')
-        grade = data.get('grade')
-        level = data.get('level')
-        subject = data.get('subject')
-        student_id = data.get('student_id')
-        include_performance_summary = data.get('include_performance_summary', False)
-        timestamp = data.get('timestamp', datetime.utcnow().isoformat())
-        format = data.get('format', 'txt')
-        download = data.get('download', False)
         lesson_data = data.get('lesson_data', {})  # Get lesson_data from the request
 
         # Validate input
@@ -780,7 +1130,7 @@ def get_lesson_content():
         # Validate input
         student_id = data.get('student_id')
         lesson_ref = data.get('lesson_ref')
-        if not student_id or not lesson_ref:
+        if not student_id or lesson_ref:
             logger.error("Missing student_id or lesson_ref")
             return create_response(False, "Missing required fields", status_code=400)
 
@@ -823,7 +1173,7 @@ def get_lesson_content():
 @app.route('/generate-lesson-plan', methods=['POST'])
 def generate_lesson_plan():
     try:
-        data = request.get_json()  # Use global `request`
+        data = request.get_json()
         if not data:
             return create_response(False, 'Invalid JSON data', status_code=400)
 
@@ -838,7 +1188,7 @@ def generate_lesson_plan():
             'level': str,
             'subject': str
         }
-        
+
         missing = [field for field, _ in required_fields.items() if field not in data]
         if missing:
             return create_response(False, f'Missing required fields: {", ".join(missing)}', status_code=400)
@@ -866,7 +1216,7 @@ def generate_lesson_plan():
             logger.debug(f"Retrieved lesson data: {lesson_data}")
             if not lesson_data:
                 return create_response(False, "Lesson document not found", status_code=404)
-                
+
         except Exception as e:
             logger.error(f"Firestore error: {str(e)}")
             return create_response(False, "Database error", status_code=500)
@@ -875,7 +1225,7 @@ def generate_lesson_plan():
         metadata = lesson_data.get('metadata', {})
         blooms_levels = metadata.get('blooms_level', metadata.get('BloomsLevel', ["unspecified"]))
         lesson_time_length = metadata.get('estimated_duration', '30 min')
-        
+
         # Time allocation logic
         instructional_steps = lesson_data.get('instructionalSteps') or []
         if not instructional_steps:
@@ -887,7 +1237,7 @@ def generate_lesson_plan():
             'assessment': '5 min',
             'conclusion': '5 min'
         }
-        
+
         for step in instructional_steps:
             title = step.get('sectionTitle', '').lower()
             if 'key concept' in title:
@@ -972,7 +1322,7 @@ def generate_lesson_plan():
 
         Please generate the complete lesson plan now, following the specified structure and guidelines, assuming the role of the AI teacher delivering the lesson in a personalized, one-on-one online setting. **Generate specific examples and quiz questions. Do not include any video suggestions or placeholders.**
         """
-        
+
         # Corrected Gemini API call
         try:
             logger.info("Generating lesson plan with Gemini")
@@ -980,11 +1330,13 @@ def generate_lesson_plan():
                 prompt,
                 request_options={'timeout': 30}  # Add timeout within request_options
             )
-            
+
             if not gemini_response.text:
                 return create_response(False, "Empty response from AI", status_code=500)
-                
-            return create_response(True, "Success", {"lesson_plan": gemini_response.text})
+
+            # Return the generated lesson plan directly in the response
+            return create_response(True, "Lesson plan generated successfully", {"lesson_plan": gemini_response.text})
+
         except Exception as e:
             logger.error(f"Gemini Error: {str(e)}")
             return create_response(False, "AI service unavailable", status_code=503)
@@ -992,82 +1344,130 @@ def generate_lesson_plan():
     except ValueError as e:
         logger.error(f"Validation error: {str(e)}")
         return create_response(False, str(e), status_code=400)
+
     except Exception as e:
         logger.exception(f"Unexpected error: {str(e)}")  # Log full traceback
         return create_response(False, "Internal server error", status_code=500)
 
-@app.route("/", methods=["GET", "POST"])
-def lesson_manager():  # Removed parameter
-    # Allow both GET and POST methods
-    if request.method not in ['GET', 'POST']:
-        return jsonify({"error": "Method not allowed"}), 405
+@app.route('/countries/<country>/curriculums/<curriculum>/grades/<grade>/levels/<level>/subjects/<subject>/lessons/<lesson_ref>', methods=['POST'])
+def create_lesson(country, curriculum, grade, level, subject, lesson_ref):
+    try:
+        doc_ref = db.document(
+            f"countries/{country}/curriculums/{curriculum}/grades/{grade}"
+            f"/levels/{level}/subjects/{subject}/lessons/{lesson_ref}"
+        )
+        
+        if not doc_ref.get().exists:
+            # Create parent collections
+            parent_segments = [
+                ("countries", country),
+                ("curriculums", curriculum),
+                ("grades", grade),
+                ("levels", level),
+                ("subjects", subject),
+                ("lessons", lesson_ref)
+            ]
+            
+            current_path = []
+            for collection, document in parent_segments:
+                current_path.append(f"{collection}/{document}")
+                parent_ref = db.document("/".join(current_path))
+                
+                if not parent_ref.get().exists:
+                    parent_ref.set({
+                        'created_at': firestore.SERVER_TIMESTAMP,
+                        'type': collection[:-1]  # e.g., "country" instead of "countries"
+                    })
 
-    # Handle GET requests
-    if request.method == 'GET':
-        return jsonify({"message": "GET request successful"}), 200
+        # Save lesson data with validation
+        lesson_data = request.get_json()
+        if validate_lesson(lesson_data):
+            doc_ref.set(lesson_data)
+            return create_response(True, "Lesson created successfully")
+        return create_response(False, "Invalid lesson format", status_code=400)
 
-    # Handle POST requests
-    if request.method == 'POST':
-        try:
-            logger.debug("Request received at /")
+    except Exception as e:
+        logger.error(f"Lesson creation error: {str(e)}")
+        return create_response(False, "Failed to create lesson", status_code=500)
 
-            # Check if the request contains JSON data
-            if not request.is_json:
-                return jsonify({'success': False, 'message': 'Invalid JSON data'}), 400
+# ===== OPTIMIZE LESSON TIMING =====
+def optimize_lesson_timing(lesson_plan: Dict, desired_total_minutes: int) -> Dict:
+    """Optimizes lesson timing using Gemini's text response with natural language processing"""
+    # Validate input structure
+    required_keys = ['instructionalSteps', 'learningObjectives', 'quizzesAndAssessments']
+    for key in required_keys:
+        if key not in lesson_plan:
+            logging.error(f"Missing required key in lesson plan: {key}")
+            return lesson_plan
 
-            # Parse and log request payload
-            data = request.get_json()
-            logger.debug(f"Parsed payload: {data}")
+    try:
+        # Calculate current total time
+        current_total = sum(
+            int(step['sectionTimeLength'].split()[0])
+            for step in lesson_plan['instructionalSteps']
+        )
 
-            # Validate payload
-            lesson_ref = data.get('lessonRef')
-            if not lesson_ref:
-                logger.error("Missing lessonRef")
-                return jsonify({'success': False, 'message': 'Missing lessonRef'}), 400
+        # Generate Gemini prompt
+        prompt = f"""Analyze this {lesson_plan.get('subject', 'lesson')} plan and suggest time adjustments.
+        Current total: {current_total} minutes | Target: {desired_total_minutes} minutes"""
+        
+        # ... rest of the optimization logic ...
 
-            # Extract parameters
-            action = data.get("action")
-            student_id = data.get("student_id")
-            logger.debug(f"Action: {action}, Student ID: {student_id}, LessonRef: {lesson_ref}")
+    except Exception as e:
+        logging.error(f"Error in time optimization: {str(e)}")
+        return lesson_plan
 
-            # Validate parameters
-            if not action or not student_id:
-                logger.error("Missing required parameters")
-                return jsonify({"success": False, "message": "Missing required parameters"}), 400
+def find_lesson_by_ref(lesson_ref, country, curriculum, grade, level, subject):
+    """
+    Find a lesson document in Firestore based on provided parameters.
+    Returns: (lesson_path, lesson_data)
+    """
+    try:
+        # Construct the document path with the lessonRef subcollection
+        doc_path = f"countries/{country}/curriculums/{curriculum}/grades/{grade}/levels/{level}/subjects/{subject}/lessonRef/{lesson_ref}"
+        doc_ref = db.document(doc_path)
 
-            # Process action
-            if action == "initiate_lesson":
-                logger.info(f"Initiating lesson {lesson_ref} for student {student_id}")
-                return jsonify({"success": True, "message": f"Lesson {lesson_ref} initiated for student {student_id}"})
+        logger.info(f"Attempting to fetch lesson at path: {doc_path}")
 
-            logger.error(f"Invalid action: {action}")
-            return jsonify({"success": False, "message": "Invalid action"}), 400
+        # Get the document
+        doc = doc_ref.get()
 
-        except Exception as e:
-            # Log the exception with full traceback
-            logger.exception("An unexpected error occurred")
-            return jsonify({"success": False, "message": f"Internal server error: {str(e)}"}), 500
+        if not doc.exists:
+            logger.error(f"Document not found at path: {doc_path}")
+            raise ValueError(f'No lesson found for ref: {lesson_ref}')
 
-# Error Handlers
-@app.errorhandler(500)
-def handle_500_error(e):
-    logger.exception("Internal server error occurred")
-    return create_response(
-        False,
-        "An internal server error occurred. Please try again later.",
-        status_code=500
-    )
+        # Get document data
+        lesson_data = doc.to_dict()
+        if not lesson_data:
+            lesson_data = {}  # Ensure we always return a dict
 
-@app.errorhandler(404)
-def handle_404_error(e):
-    return create_response(
-        False,
-        "The requested resource was not found.",
-        status_code=404
-    )
+        # Add missing fields if they don't exist
+        lesson_data.setdefault('lessonRef', lesson_ref)
+        lesson_data.setdefault('subject', subject)
+        lesson_data.setdefault('gradeLevel', grade)
 
+        logger.info(f"Found lesson: {doc.id}")
+        logger.debug(f"Lesson data: {lesson_data}")
+
+        return doc_path, lesson_data
+
+    except Exception as e:
+        logger.error(f"Error finding lesson: {str(e)}")
+        raise ValueError(f'Error retrieving lesson: {str(e)}')
+
+# ===== MAIN EXECUTION =====
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
+    print("Starting server...")
+    app.run(host="localhost", port=8080, debug=True)
+
+# ...existing code...
+
+
+
+
+
+
+
+
 
 
