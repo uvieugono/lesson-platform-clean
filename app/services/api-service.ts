@@ -1,84 +1,178 @@
-import axios, { AxiosResponse } from 'axios';
-import { handleAxiosError } from '@utils/error-utils';
+import axios from 'axios';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://lesson-manager-914922463191.us-central1.run.app';
+const BASE_URL = '/api'; 
 
-const axiosInstance = axios.create({
-  baseURL: BASE_URL,
-  timeout: 10000,
-  headers: {
-    'Content-Type': 'application/json'
-  }
-});
+axios.defaults.headers.common['Content-Type'] = 'application/json';
 
-function isRetryableError(error: any): boolean {
-  return (
-    !error.response ||
-    error.response.status === 408 ||
-    error.response.status === 429 ||
-    (error.response.status >= 500 && error.response.status <= 599)
-  );
+interface ApiService {
+  initializeLesson: (studentId: string, lessonPath: string) => Promise<any>;
+  pauseLesson: (sessionId: string, reason: string) => Promise<any>;
+  resumeLesson: (sessionId: string) => Promise<any>;
+  generateNotes: (lessonRef: string, studentId: string) => Promise<any>;
+  processInteraction: (
+    sessionId: string,
+    studentId: string,
+    lessonRef: string,
+    interactionData: any
+  ) => Promise<any>;
+  saveProgress: (
+    sessionId: string,
+    userId: string,
+    lessonRef: string,
+    progress: number
+  ) => Promise<any>;
+  aiTutor: (studentId: string, question: string, lessonPath: string) => Promise<any>;
+  generateLessonPlan: (data: any) => Promise<any>;
+  findLessonByRef: (
+    lessonRef: string,
+    country: string,
+    curriculum: string,
+    grade: string,
+    level: string,
+    subject: string
+  ) => Promise<any>;
+  lessonContent: (studentId: string, lessonId: string) => Promise<any>;
 }
 
-// Simplified request interceptor - only handle config
-axiosInstance.interceptors.request.use(
-  config => config,
-  error => Promise.reject(error) // Don't transform error here
-);
-
-// Simplified response interceptor - only handle retries
-axiosInstance.interceptors.response.use(
-  (response: AxiosResponse) => response,
-  async (error) => {
-    const originalRequest = error.config;
-    
-    if (!originalRequest._retry && isRetryableError(error)) {
-      originalRequest._retry = true;
-      try {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        return await axiosInstance(originalRequest);
-      } catch (retryError) {
-        return Promise.reject(retryError); // Don't transform error here
-      }
-    }
-    return Promise.reject(error); // Don't transform error here
-  }
-);
-
-// Helper function to handle API errors
-async function handleApiError(error: unknown) {
-  if (axios.isAxiosError(error)) {
-    const errorMessage = handleAxiosError(error);
-    throw new Error(errorMessage);
-  }
-  if (error instanceof Error) {
-    throw error;
-  }
-  throw new Error('An unexpected error occurred');
-}
-
-export const api = {
-  async fetchLessonContent(studentId: string, lessonId: string) {
+export const api: ApiService = {
+  initializeLesson: async (studentId, lessonPath) => {
     try {
-      const response = await axiosInstance.post('/lesson-content', {
+      const response = await axios.post(`${BASE_URL}/initialize-lesson`, {
         student_id: studentId,
-        lesson_id: lessonId
+        lesson_path: lessonPath,
       });
       return response.data;
     } catch (error) {
-      await handleApiError(error);
+      console.error('Initialize lesson error:', error);
+      throw new Error(error?.response?.data?.message || 'Failed to initialize lesson');
     }
   },
-  
-  async initializeLesson(studentId: string, lessonId: string) {
+
+  pauseLesson: async (sessionId, reason) => {
     try {
-      const response = await axiosInstance.post('/initialize-lesson', {
-        student_id: studentId,
-        lesson_id: lessonId
+      const response = await axios.post(`${BASE_URL}/pause-lesson`, {
+        session_id: sessionId,
+        reason: reason,
+        timestamp: new Date().toISOString(),
       });
       return response.data;
     } catch (error) {
-      await handleApiError(error);
+      console.error('Pause lesson error:', error);
+      throw new Error(error?.response?.data?.message || 'Failed to pause lesson');
     }
-  }
+  },
+
+  resumeLesson: async (sessionId) => {
+    try {
+      const response = await axios.post(`${BASE_URL}/resume-lesson`, {
+        session_id: sessionId,
+        timestamp: new Date().toISOString(),
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Resume lesson error:', error);
+      throw new Error(error?.response?.data?.message || 'Failed to resume lesson');
+    }
+  },
+
+  generateNotes: async (lessonRef, studentId) => {
+    try {
+      const response = await axios.post(`${BASE_URL}/generate-notes`, {
+        lessonRef: lessonRef,
+        studentId: studentId,
+      });
+      if (!response.data.success) {
+        throw new Error(response.data.message);
+      }
+      return response.data.data;
+    } catch (error) {
+      console.error('Generate notes error:', error);
+      throw new Error(error?.response?.data?.message || 'Failed to generate notes');
+    }
+  },
+
+  processInteraction: async (sessionId, studentId, lessonRef, interactionData) => {
+    try {
+      const response = await axios.post(`${BASE_URL}/process-interaction`, {
+        session_id: sessionId,
+        student_id: studentId,
+        lesson_ref: lessonRef,
+        interaction_analytics: interactionData,
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Process interaction error:', error);
+      throw new Error(error?.response?.data?.message || 'Failed to process interaction');
+    }
+  },
+
+  saveProgress: async (sessionId, userId, lessonRef, progress) => {
+    try {
+      const response = await axios.post(`${BASE_URL}/save-progress`, {
+        session_id: sessionId,
+        user_id: userId,
+        lesson_ref: lessonRef,
+        progress: progress,
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Save progress error:', error);
+      throw new Error(error?.response?.data?.message || 'Failed to save progress');
+    }
+  },
+
+  aiTutor: async (studentId, question, lessonPath) => {
+    try {
+      const response = await axios.post(`${BASE_URL}/ai-tutor`, {
+        student_id: studentId,
+        question: question,
+        lesson_path: lessonPath,
+      });
+      return response.data;
+    } catch (error) {
+      console.error('AI tutor error:', error);
+      throw new Error(error?.response?.data?.message || 'Failed to get AI tutor response');
+    }
+  },
+
+  generateLessonPlan: async (data) => {
+    try {
+      const response = await axios.post(`${BASE_URL}/generate-lesson-plan`, data);
+      console.log("Response from generate-lesson-plan:", response); // Log the response
+      return response.data;
+    } catch (error) {
+      console.error('Generate lesson plan error:', error);
+      throw new Error(error?.response?.data?.message || 'Failed to generate lesson plan');
+    }
+  },
+
+  findLessonByRef: async (lessonRef, country, curriculum, grade, level, subject) => {
+    try {
+      const response = await axios.post(`${BASE_URL}/get-lesson-by-ref`, {
+        lesson_ref: lessonRef,
+        country: country,
+        curriculum: curriculum,
+        grade: grade,
+        level: level,
+        subject: subject
+      });
+      return response.data.data;
+    } catch (error) {
+      console.error('Error fetching lesson by ref:', error);
+      throw new Error(error?.response?.data?.message || 'Failed to fetch lesson data');
+    }
+  },
+
+  lessonContent: async (studentId, lessonId) => {
+    try {
+      const response = await axios.post(`${BASE_URL}/lesson-content`, {
+        student_id: studentId,
+        lesson_id: lessonId,
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Lesson content error:', error);
+      throw new Error(error?.response?.data?.message || 'Failed to fetch lesson content');
+    }
+  },
 };
