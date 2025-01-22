@@ -165,10 +165,13 @@ export const api: ApiService = {
 
   lessonContent: async (studentId, lessonId) => {
     try {
-      const response = await axios.post(`${BASE_URL}?endpoint=lesson-content`, {
-        student_id: studentId,
-        lesson_id: lessonId,
-      });
+      const response = await axios.post(
+        'https://us-central1-solynta-academy.cloudfunctions.net/lessonManager/lesson-content',
+        {
+          student_id: studentId,
+          lesson_id: lessonId,
+        }
+      );
       return response.data;
     } catch (error) {
       console.error('Lesson content error:', error);

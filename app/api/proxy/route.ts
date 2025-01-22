@@ -1,11 +1,5 @@
 // api/proxy/route.ts
 import { NextResponse } from 'next/server';
-import Cors from 'cors';
-
-const cors = Cors({
-  methods: ['POST', 'GET', 'OPTIONS'],
-  origin: process.env.NEXT_PUBLIC_ORIGIN || 'https://solynta-academy-learning-page.vercel.app'
-});
 
 export async function POST(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -22,8 +16,20 @@ export async function POST(request: Request) {
     });
   }
 
+  if (!endpoint) {
+    return NextResponse.json(
+      { message: 'Missing endpoint parameter' },
+      { status: 400 }
+    );
+  }
+
   const targetURL = `https://us-central1-solynta-academy.cloudfunctions.net/lessonManager/${endpoint}`;
   
+  const headers = new Headers();
+  headers.set('Access-Control-Allow-Origin', process.env.NEXT_PUBLIC_ORIGIN || '*');
+  headers.set('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+  headers.set('Access-Control-Allow-Headers', 'Content-Type');
+
   try {
     const body = await request.json();
     const response = await fetch(targetURL, {
@@ -35,12 +41,15 @@ export async function POST(request: Request) {
     });
     
     const data = await response.json();
-    return NextResponse.json(data, { status: response.status });
+    return NextResponse.json(data, {
+      status: response.status,
+      headers
+    });
     
   } catch (error) {
     return NextResponse.json(
       { message: error.message },
-      { status: 500 }
+      { status: 500, headers }
     );
   }
 }

@@ -1,1 +1,8 @@
-{}
+{
+  "/api/health/route": "app/api/health/route.js",
+  "/api/proxy/route": "app/api/proxy/route.js",
+  "/_not-found/page": "app/_not-found/page.js",
+  "/api/lesson-content/route": "app/api/lesson-content/route.js",
+  "/lessons/page": "app/lessons/page.js",
+  "/page": "app/page.js"
+}
