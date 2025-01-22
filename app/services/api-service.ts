@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const BASE_URL = '/api'; 
+const BASE_URL = '/api/proxy'; 
 
 axios.defaults.headers.common['Content-Type'] = 'application/json';
 
@@ -37,7 +37,7 @@ interface ApiService {
 export const api: ApiService = {
   initializeLesson: async (studentId, lessonPath) => {
     try {
-      const response = await axios.post(`${BASE_URL}/initialize-lesson`, {
+      const response = await axios.post(`${BASE_URL}?endpoint=initialize-lesson`, {
         student_id: studentId,
         lesson_path: lessonPath,
       });
@@ -50,7 +50,7 @@ export const api: ApiService = {
 
   pauseLesson: async (sessionId, reason) => {
     try {
-      const response = await axios.post(`${BASE_URL}/pause-lesson`, {
+      const response = await axios.post(`${BASE_URL}?endpoint=pause-lesson`, {
         session_id: sessionId,
         reason: reason,
         timestamp: new Date().toISOString(),
@@ -64,7 +64,7 @@ export const api: ApiService = {
 
   resumeLesson: async (sessionId) => {
     try {
-      const response = await axios.post(`${BASE_URL}/resume-lesson`, {
+      const response = await axios.post(`${BASE_URL}?endpoint=resume-lesson`, {
         session_id: sessionId,
         timestamp: new Date().toISOString(),
       });
@@ -77,7 +77,7 @@ export const api: ApiService = {
 
   generateNotes: async (lessonRef, studentId) => {
     try {
-      const response = await axios.post(`${BASE_URL}/generate-notes`, {
+      const response = await axios.post(`${BASE_URL}?endpoint=generate-notes`, {
         lessonRef: lessonRef,
         studentId: studentId,
       });
@@ -93,7 +93,7 @@ export const api: ApiService = {
 
   processInteraction: async (sessionId, studentId, lessonRef, interactionData) => {
     try {
-      const response = await axios.post(`${BASE_URL}/process-interaction`, {
+      const response = await axios.post(`${BASE_URL}?endpoint=process-interaction`, {
         session_id: sessionId,
         student_id: studentId,
         lesson_ref: lessonRef,
@@ -108,7 +108,7 @@ export const api: ApiService = {
 
   saveProgress: async (sessionId, userId, lessonRef, progress) => {
     try {
-      const response = await axios.post(`${BASE_URL}/save-progress`, {
+      const response = await axios.post(`${BASE_URL}?endpoint=save-progress`, {
         session_id: sessionId,
         user_id: userId,
         lesson_ref: lessonRef,
@@ -123,7 +123,7 @@ export const api: ApiService = {
 
   aiTutor: async (studentId, question, lessonPath) => {
     try {
-      const response = await axios.post(`${BASE_URL}/ai-tutor`, {
+      const response = await axios.post(`${BASE_URL}?endpoint=ai-tutor`, {
         student_id: studentId,
         question: question,
         lesson_path: lessonPath,
@@ -137,7 +137,7 @@ export const api: ApiService = {
 
   generateLessonPlan: async (data) => {
     try {
-      const response = await axios.post(`${BASE_URL}/generate-lesson-plan`, data);
+      const response = await axios.post(`${BASE_URL}?endpoint=generate-lesson-plan`, data);
       console.log("Response from generate-lesson-plan:", response); // Log the response
       return response.data;
     } catch (error) {
@@ -148,7 +148,7 @@ export const api: ApiService = {
 
   findLessonByRef: async (lessonRef, country, curriculum, grade, level, subject) => {
     try {
-      const response = await axios.post(`${BASE_URL}/get-lesson-by-ref`, {
+      const response = await axios.post(`${BASE_URL}?endpoint=get-lesson-by-ref`, {
         lesson_ref: lessonRef,
         country: country,
         curriculum: curriculum,
@@ -165,7 +165,7 @@ export const api: ApiService = {
 
   lessonContent: async (studentId, lessonId) => {
     try {
-      const response = await axios.post(`${BASE_URL}/lesson-content`, {
+      const response = await axios.post(`${BASE_URL}?endpoint=lesson-content`, {
         student_id: studentId,
         lesson_id: lessonId,
       });

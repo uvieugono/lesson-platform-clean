@@ -2,27 +2,18 @@
 
 import React, { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
-import {
-  BookOpen,
-  Play,
-  Trophy,
-  Send,
-  Sparkles,
-  Pause,
-} from 'lucide-react';
+import { BookOpen, Play, Trophy, Send, Sparkles, Pause } from 'lucide-react';
 import axios from 'axios';
 import { LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts';
 import { motion } from 'framer-motion';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import ErrorDisplay from '@/components/ErrorDisplay';
-// Alias the imported api to localApi
-import { api as localApi } from '@/services/api-service';
-import { showErrorToast } from '../utils/error-utils'; // Adjusted path
+import { Card, CardTitle, CardContent } from '@/components/ui/card';
+import ErrorDisplay from '@/components/ErrorDisplay'; 
+import { api as localApi } from '@/services/api-service'; 
 
 console.log('ErrorDisplay component:', ErrorDisplay);
 
 // Using proxy configuration
-const BASE_URL = '/api';
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 // Configure axios defaults
 axios.defaults.headers.common['Content-Type'] = 'application/json';
@@ -424,7 +415,7 @@ function getDynamicStudentId(): string {
   return "dummy-student-id";
 }
 
-const RefocusedLessonPage = () => {
+const LessonPage = () => {
   const [isLessonStarted, setIsLessonStarted] = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -449,7 +440,7 @@ const RefocusedLessonPage = () => {
     examContent: [],
   });
   const [lessonData, setLessonData] = useState(null);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<Error | null>(null); // Type error properly
 
   // Replace with your dynamic source
   const studentId = getDynamicStudentId();
@@ -503,6 +494,7 @@ const RefocusedLessonPage = () => {
 
   const handleStartLesson = async (lessonId) => {
     setIsLoading(true);
+    setError(null); // Clear any previous errors
     try {
       const response = await localApi.initializeLesson(studentId, lessonId);
       console.log('API Response:', response);
@@ -511,7 +503,7 @@ const RefocusedLessonPage = () => {
       setIsLessonStarted(true);
     } catch (error) {
       console.error('Failed to start lesson:', error);
-      setError(error);  // Use setError instead of alert
+      setError(error); // Set the error state
     } finally {
       setIsLoading(false);
     }
@@ -978,16 +970,7 @@ const RefocusedLessonPage = () => {
   );
 };
 
-export default function LessonPage() {
-  const [isLessonStarted, setIsLessonStarted] = useState(false);
-  // ... all your state and other code ...
-
-  return (
-    <SimpleErrorBoundary>
-      // ... all your JSX ...
-    </SimpleErrorBoundary>
-  );
-}
+export default LessonPage;
 
 interface SubmittedState {
   quiz?: boolean;

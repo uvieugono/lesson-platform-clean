@@ -1,18 +1,25 @@
-import { AxiosError } from 'axios';
+// app/utils/error-utils.ts
+import axios, { AxiosError } from 'axios';
+import { toast } from 'react-toastify'; // Import toast
+import 'react-toastify/dist/ReactToastify.css'; // Import CSS (required)
 
-// File: utils/error-utils.ts
-export const showErrorToast = (error: Error): void => {
-  // This function can be implemented with your preferred toast library
-  console.error('Error:', error.message);
-  // Example with a toast library:
-  // toast.error(error.message);
-};
+export const handleAxiosError = (error: AxiosError | Error | unknown): string => {
+  let errorMessage = "An unexpected error occurred."; // Default error message
 
-export function handleAxiosError(error: any): string {
-  if (error.response) {
-    return `Error: ${error.response.status}: ${error.response.data.message || 'Unknown error occurred'}`;
-  } else if (error.request) {
-    return 'Error: No response received from server';
+  if (axios.isAxiosError(error)) {
+    // Handle Axios-specific errors
+    const serverMessage = error.response?.data?.message;
+    errorMessage = serverMessage || "An error occurred with the server request.";
+    toast.error(errorMessage); // Show toast here
+  } else if (error instanceof Error) {
+    // Handle generic Error objects
+    errorMessage = error.message;
+    toast.error(errorMessage); // Show toast here
+  } else {
+    // Handle other unknown error types
+    toast.error(errorMessage); // Show toast here
   }
-  return `Error: ${error.message}`;
-}
+
+  console.error(error); // Always log the error for debugging
+  return errorMessage; // Return the error message string
+};

@@ -9,14 +9,14 @@
     ],
     "allowJs": true,
     "skipLibCheck": true,
-    "baseUrl": ".", 
+    "baseUrl": ".",
     "paths": {
       "@/*": [
         "./*"
       ],
       "@utils/*": [
-        "app/utils/*"
-      ]
+        "./app/utils/*"
+      ] // Correct mapping for @utils
     },
     "moduleResolution": "node",
     "allowSyntheticDefaultImports": true,
@@ -30,14 +30,14 @@
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
     "composite": true,
-    "noEmit": true,
     "incremental": true,
     "plugins": [
       {
         "name": "next"
       }
     ],
-    "module": "esnext"
+    "module": "esnext",
+    "noEmit": true
   },
   "include": [
     "next-env.d.ts",
@@ -48,10 +48,5 @@
   ],
   "exclude": [
     "node_modules"
-  ],
-  "references": [
-    {
-      "path": "./tsconfig.node.json"
-    }
   ]
 }
