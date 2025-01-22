@@ -1,50 +1,22 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import dynamic from 'next/dynamic';
 import { BookOpen, Play, Trophy, Send, Sparkles, Pause } from 'lucide-react';
 import axios from 'axios';
 import { LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts';
 import { motion } from 'framer-motion';
-import { Card, CardTitle, CardContent } from '@/components/ui/card';
-import ErrorDisplay from '@/components/ErrorDisplay'; 
-import { api as localApi } from '@/services/api-service'; 
-
-console.log('ErrorDisplay component:', ErrorDisplay);
+import { Card, CardContent } from '@/components/ui/card';
+import ErrorDisplay from '@/components/ErrorDisplay';
+import { api as localApi } from '@/services/api-service';
+import { handleAxiosError } from '@/app/utils/error-utils';
+import { ContentCard } from '@/components/ContentCard';
+import SimpleErrorBoundary from '@/components/SimpleErrorBoundary';
 
 // Using proxy configuration
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 // Configure axios defaults
 axios.defaults.headers.common['Content-Type'] = 'application/json';
-
-// First, let's define a simple error boundary component
-function SimpleErrorBoundary({ children }) {
-  const [hasError, setHasError] = useState(false);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    const handleError = (error) => {
-      console.error('Error caught by boundary:', error);
-      setError(error);
-      setHasError(true);
-    };
-
-    window.addEventListener('error', handleError);
-    return () => window.removeEventListener('error', handleError);
-  }, []);
-
-  if (hasError) {
-    return (
-      <div className="p-4 bg-red-100 text-red-700 rounded-lg">
-        <h2>Something went wrong</h2>
-        <pre>{error?.toString()}</pre>
-      </div>
-    );
-  }
-
-  return children;
-}
 
 // Add a debug wrapper component
 function DebugWrapper({ children }) {
@@ -55,143 +27,6 @@ function DebugWrapper({ children }) {
     </div>
   );
 }
-
-const api = {
-  initializeLesson: async (studentId, lessonPath) => {
-    try {
-      const response = await axios.post(`${BASE_URL}/initialize-lesson`, {
-        student_id: studentId,
-        lesson_path: lessonPath,
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Initialize lesson error:', error);
-      throw new Error(error?.response?.data?.message || 'Failed to initialize lesson');
-    }
-  },
-
-  pauseLesson: async (sessionId, reason) => {
-    try {
-      const response = await axios.post(`${BASE_URL}/pause-lesson`, {
-        session_id: sessionId,
-        reason: reason,
-        timestamp: new Date().toISOString(),
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Pause lesson error:', error);
-      throw new Error(error?.response?.data?.message || 'Failed to pause lesson');
-    }
-  },
-
-  resumeLesson: async (sessionId) => {
-    try {
-      const response = await axios.post(`${BASE_URL}/resume-lesson`, {
-        session_id: sessionId,
-        timestamp: new Date().toISOString(),
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Resume lesson error:', error);
-      throw new Error(error?.response?.data?.message || 'Failed to resume lesson');
-    }
-  },
-
-  generateNotes: async (lessonRef, studentId) => {
-    try {
-      const response = await axios.post(`${BASE_URL}/generate-notes`, {
-        lessonRef: lessonRef,
-        studentId: studentId,
-      });
-      if (!response.data.success) {
-        throw new Error(response.data.message);
-      }
-      return response.data.data;
-    } catch (error) {
-      console.error('Generate notes error:', error);
-      throw new Error(error?.response?.data?.message || 'Failed to generate notes');
-    }
-  },
-
-  processInteraction: async (sessionId, studentId, lessonRef, interactionData) => {
-    try {
-      const response = await axios.post(`${BASE_URL}/process-interaction`, {
-        session_id: sessionId,
-        student_id: studentId,
-        lesson_ref: lessonRef,
-        interaction_analytics: interactionData,
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Process interaction error:', error);
-      throw new Error(error?.response?.data?.message || 'Failed to process interaction');
-    }
-  },
-
-  saveProgress: async (sessionId, userId, lessonRef, progress) => {
-    try {
-      const response = await axios.post(`${BASE_URL}/save-progress`, {
-        session_id: sessionId,
-        user_id: userId,
-        lesson_ref: lessonRef,
-        progress: progress,
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Save progress error:', error);
-      throw new Error(error?.response?.data?.message || 'Failed to save progress');
-    }
-  },
-
-  aiTutor: async (studentId, question, lessonPath) => {
-    try {
-      const response = await axios.post(`${BASE_URL}/ai-tutor`, {
-        student_id: studentId,
-        question: question,
-        lesson_path: lessonPath,
-      });
-      return response.data;
-    } catch (error) {
-      console.error('AI tutor error:', error);
-      throw new Error(error?.response?.data?.message || 'Failed to get AI tutor response');
-    }
-  },
-};
-
-const sampleData = {
-  generatedContent: [{ content: 'Welcome to the lesson!' }],
-  interactiveElements: [
-    {
-      type: 'graph',
-      title: 'Sample Graph',
-      data: [
-        { x: 1, y: 10 },
-        { x: 2, y: 20 },
-        { x: 3, y: 30 },
-      ],
-    },
-    {
-      type: 'animation',
-      title: 'Sample Animation',
-      animationConfig: { x: 100, y: 0, rotate: 360, duration: 2 },
-    },
-    {
-      type: 'flashcard',
-      title: 'Sample Flashcards',
-      flashcards: [
-        { front: 'What is 2 + 2?', back: '4' },
-        { front: 'What is the capital of France?', back: 'Paris' },
-      ],
-    },
-    {
-      type: 'text',
-      title: 'Sample Text',
-      content: 'This is a sample text content.',
-    },
-  ],
-  quizzes: [],
-  examContent: [],
-};
 
 function Progress({ value }) {
   return (
@@ -212,25 +47,10 @@ function LoadingSpinner() {
   );
 }
 
-const LocalErrorDisplay = ({ error, onRetry }) => {
-  return (
-    <div className="text-center p-6 bg-red-50 rounded-xl">
-      <h3 className="text-lg font-semibold text-red-800 mb-2">Something went wrong</h3>
-      <p className="text-red-600 mb-4">{error?.message || 'An error occurred while loading the lesson'}</p>
-      <button
-        onClick={onRetry}
-        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-      >
-        Retry
-      </button>
-    </div>
-  );
-};
-
 interface StartScreenProps {
   handleStartLesson: (lessonId: string) => void;
   isLoading: boolean;
-  error?: any; // Add the `error` prop as optional
+  error: Error | null;
 }
 
 function StartScreen({ handleStartLesson, isLoading, error }: StartScreenProps) {
@@ -283,7 +103,7 @@ function StartScreen({ handleStartLesson, isLoading, error }: StartScreenProps) 
 
 interface TabButtonProps {
   active: boolean;
-  disabled?: boolean; // Make `disabled` optional if needed
+  disabled?: boolean;
   onClick: () => void;
   children: React.ReactNode;
 }
@@ -295,10 +115,9 @@ function TabButton({ active, disabled = false, onClick, children }: TabButtonPro
       disabled={disabled}
       className={`
         px-6 py-3 rounded-lg font-medium transition-all
-        ${
-          disabled
-            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-            : active
+        ${disabled
+          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+          : active
             ? 'bg-blue-600 text-white shadow-md'
             : 'bg-white text-gray-600 hover:bg-gray-50'
         }
@@ -312,43 +131,13 @@ function TabButton({ active, disabled = false, onClick, children }: TabButtonPro
 function ChatMessage({ message, role, assistantLabel = 'Tutor' }) {
   return (
     <div
-      className={`p-4 rounded-xl shadow-sm ${
-        role === 'user' ? 'bg-blue-50 text-blue-900 ml-8' : 'bg-green-50 text-green-900 mr-8'
-      }`}
+      className={`p-4 rounded-xl shadow-sm ${role === 'user' ? 'bg-blue-50 text-blue-900 ml-8' : 'bg-green-50 text-green-900 mr-8'
+        }`}
     >
       <div className="font-medium mb-1">{role === 'user' ? 'You' : assistantLabel}</div>
       <p className="text-sm">{message}</p>
     </div>
   );
-}
-
-function ContentCard({ title, children }) {
-  return (
-    <div className="bg-white rounded-xl shadow-lg p-8">
-      <h2 className="text-2xl font-bold mb-6 text-blue-600">{title}</h2>
-      {children}
-    </div>
-  );
-}
-
-function ErrorBoundary({ children }) {
-  const [hasError, setHasError] = useState(false);
-
-  useEffect(() => {
-    const handleError = (error) => {
-      console.error('Error caught by boundary:', error);
-      setHasError(true);
-    };
-
-    window.addEventListener('error', handleError);
-    return () => window.removeEventListener('error', handleError);
-  }, []);
-
-  if (hasError) {
-    return <div>Something went wrong. Please try again.</div>;
-  }
-
-  return children;
 }
 
 const GraphComponent = ({ data }) => (
@@ -415,13 +204,21 @@ function getDynamicStudentId(): string {
   return "dummy-student-id";
 }
 
+interface LessonResponse {
+  success: boolean;
+  message?: string;
+  lessonData: {
+    lessonRef: string;
+    lessonTitle?: string;
+    metadata?: {
+      blooms_level?: string[];
+    };
+  };
+}
+
 const LessonPage = () => {
-  const [isLessonStarted, setIsLessonStarted] = useState(false);
-  const [sessionId, setSessionId] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('lesson');
-  const [timeSpent, setTimeSpent] = useState(0);
-  const [isVoiceEnabled, setIsVoiceEnabled] = useState(true);
   const [isLessonPaused, setIsLessonPaused] = useState(false);
   const [instructorChatHistory, setInstructorChatHistory] = useState([]);
   const [tutorChatHistory, setTutorChatHistory] = useState([]);
@@ -432,82 +229,67 @@ const LessonPage = () => {
   const [lessonCompleted, setLessonCompleted] = useState(false);
   const [tutorInteractions, setTutorInteractions] = useState(10);
   const [examTimeLeft, setExamTimeLeft] = useState(60);
-  const [examTimerActive, setExamTimerActive] = useState(false);
   const [dynamicLessonContent, setDynamicLessonContent] = useState({
     generatedContent: [],
     interactiveElements: [],
     quizzes: [],
     examContent: [],
   });
-  const [lessonData, setLessonData] = useState(null);
-  const [error, setError] = useState<Error | null>(null); // Type error properly
+  const [lessonData, setLessonData] = useState<any>(null);
+  const [error, setError] = useState<Error | null>(null);
+  const [isExamActive, setIsExamActive] = useState(false);
+  const [examData, setExamData] = useState<any>(null); // Use any or a more specific type
 
-  // Replace with your dynamic source
+  // Extract Bloom's levels and convert to lowercase
+  const bloomsLevels = lessonData ? 
+    lessonData.metadata?.blooms_level?.map(level => level.toLowerCase()) : 
+    ["remembering", "understanding"];
+
   const studentId = getDynamicStudentId();
 
-  const fetchLessonContent = async () => {
+  const handleStartLesson = async (lessonId: string) => {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await axios.post(`${BASE_URL}/lesson-content`, {
-        student_id: studentId,
-        lesson_id: 'lesson123', // Pass any required payload
-      }); // Change from GET to POST
-      setDynamicLessonContent(response.data);
-    } catch (err) {
-      console.error('Error fetching lesson content:', err);
-      setError(err);
+      // Add type assertion to the API response
+      const response = await localApi.initializeLesson(studentId, lessonId) as LessonResponse;
+      
+      console.log('API Response:', response);
+      if (response.success) {
+        setLessonData(response.lessonData);
+      } else {
+        throw new Error(response.message || 'Failed to initialize lesson');
+      }
+    } catch (error) {
+      console.error('Failed to start lesson:', error);
+      handleAxiosError(error);
+      setError(error as Error);
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    if (isLessonStarted) {
-      fetchLessonContent();
+    if (lessonData && lessonData.lessonRef) {
+      console.log("Lesson data:", lessonData);
+      setIsLoading(true);
+      setError(null);
+      axios.post(`${BASE_URL}/lesson-content`, {
+        student_id: studentId,
+        lesson_ref: lessonData.lessonRef,
+      })
+        .then(response => {
+          setDynamicLessonContent(response.data);
+        })
+        .catch(err => {
+          console.error('Error fetching lesson content:', err);
+          setError(err);
+        })
+        .finally(() => {
+          setIsLoading(false);
+        });
     }
-  }, [isLessonStarted]);
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-6">
-        <Card className="w-full max-w-2xl">
-          <CardContent>
-            <LocalErrorDisplay error={error} onRetry={fetchLessonContent} />
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-6">
-        <Card className="w-full max-w-2xl">
-          <CardContent>
-            <LoadingSpinner />
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  const handleStartLesson = async (lessonId) => {
-    setIsLoading(true);
-    setError(null); // Clear any previous errors
-    try {
-      const response = await localApi.initializeLesson(studentId, lessonId);
-      console.log('API Response:', response);
-      setSessionId(response.session_id);
-      setLessonData(response.lessonData);
-      setIsLessonStarted(true);
-    } catch (error) {
-      console.error('Failed to start lesson:', error);
-      setError(error); // Set the error state
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  }, [lessonData]);
 
   const handleEndLesson = async () => {
     try {
@@ -521,9 +303,12 @@ const LessonPage = () => {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      setIsLessonStarted(false);
-      setLessonCompleted(false);
-      setSessionId(null);
+      link.download = `${lessonData.lessonTitle || 'lesson-notes'}.txt`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      setLessonCompleted(true);
     } catch (error) {
       console.error('Error generating notes:', error);
       alert('Failed to generate lesson notes. Please try again.');
@@ -535,7 +320,6 @@ const LessonPage = () => {
 
     if (!lessonData) throw new Error('Lesson data is not available');
 
-    // Use a type assertion to dynamically access the aiTutor method
     const dynamicApi = localApi as any;
 
     if (activeTab === 'tutor') {
@@ -587,44 +371,62 @@ const LessonPage = () => {
 
   const handleSubmit = (type: keyof Scores) => {
     const isQuiz = type === 'quiz';
-    const questions = isQuiz ? dynamicLessonContent.quizzes : dynamicLessonContent.examContent;
+    const questions = isQuiz ? dynamicLessonContent.quizzes : examData?.questions;
+
+    if (!questions) {
+      console.error('No questions found for this quiz/exam.');
+      return;
+    }
 
     let score = 0;
+
     questions.forEach((q, idx) => {
-      if (
-        (q.type === 'fill' || q.type === 'multiple-choice') &&
-        responses[`${type}-${idx}`] === q.correctAnswer
-      ) {
-        score++;
+      const responseKey = `${type}-${idx}`;
+      if (q.type === 'multiple-choice' || q.type === 'fill-in-the-gap') {
+        if (responses[responseKey] === q.answer) {
+          score++;
+        }
+      } else if (q.type === 'free-form') {
+        // For free-form, you might want to check if an answer is provided 
+        // and potentially grade it later or use a different scoring mechanism.
+        if (responses[responseKey] && responses[responseKey].trim() !== '') {
+          // This is a placeholder. You might want to do something more sophisticated here.
+          score++;
+        }
       }
     });
 
     const calculatedScore = Math.round((score / questions.length) * 100);
+
     setScores((prev) => ({
       ...prev,
       [type]: calculatedScore,
     }));
+
     setSubmitted((prev) => ({ ...prev, [type]: true }));
 
-    if (isQuiz) {
-      setLessonCompleted(true);
-    }
+    // Remove automatic lesson completion for quiz submission
+    // if (isQuiz) {
+    //     setLessonCompleted(true);
+    // }
 
+    // Handle exam submission differently (e.g., send to a different endpoint)
     if (!isQuiz) {
-      setExamTimerActive(false);
+      // Send exam results to the backend for grading or further processing
+      // Example:
+      // axios.post(`${BASE_URL}/submit-exam`, { studentId, examId: 'your-exam-id', responses }); 
     }
   };
 
   const handleTabClick = (tabName) => {
-    if (tabName === 'exam' && !lessonCompleted) return;
-    setActiveTab(tabName);
+    if (tabName === 'exam' && !isExamActive) return; // Only allow if exam is active
 
-    if (tabName === 'exam') {
-      setExamTimeLeft(60);
-      setExamTimerActive(true);
-    } else {
-      setExamTimerActive(false);
+    if (tabName === 'exam' && isExamActive) {
+      // Assuming you have an exam ID when the exam is active
+      fetchExamData('your-exam-id'); // Replace 'your-exam-id' with the actual ID
     }
+
+    setActiveTab(tabName);
   };
 
   const handleInputChange = (e) => {
@@ -637,80 +439,16 @@ const LessonPage = () => {
       <div className="space-y-6">
         {dynamicLessonContent.quizzes.map((q, idx) => (
           <div key={idx} className="p-6 bg-gray-50 rounded-xl">
-            <p className="text-xl font-semibold mb-4">{q.question}</p>
-            {q.type === 'multiple-choice' && (
-              <div className="space-y-3">
-                {q.options.map((opt, optIdx) => (
-                  <label
-                    key={optIdx}
-                    className="flex items-center space-x-3 p-3 bg-white rounded-lg hover:bg-blue-50 transition-colors cursor-pointer"
-                  >
-                    <input
-                      type="radio"
-                      value={opt}
-                      checked={responses[`quiz-${idx}`] === opt}
-                      onChange={(e) =>
-                        setResponses((prev) => ({
-                          ...prev,
-                          [`quiz-${idx}`]: e.target.value,
-                        }))
-                      }
-                      disabled={submitted.quiz}
-                      className="w-4 h-4 text-blue-600"
-                    />
-                    <span className="text-gray-700">{opt}</span>
-                  </label>
-                ))}
-              </div>
-            )}
+            {/* Your quiz content */}
           </div>
         ))}
-
-        {submitted.quiz ? (
-          <div className="p-6 bg-green-50 rounded-xl flex items-center justify-between">
-            <p className="text-xl font-bold text-green-800">Your Score: {scores.quiz || 0}%</p>
-          </div>
-        ) : (
-          <button
-            onClick={() => handleSubmit('quiz')}
-            disabled={submitted.quiz}
-            className="px-8 py-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all font-semibold"
-          >
-            Submit Quiz
-          </button>
-        )}
       </div>
     </ContentCard>
   );
 
   const renderTutorTab = () => (
     <ContentCard title="AI Tutor">
-      <div className="space-y-6">
-        <div className="space-y-4">
-          {tutorChatHistory.map((msg, idx) => (
-            <ChatMessage key={idx} message={msg.content} role={msg.role} />
-          ))}
-        </div>
-
-        <div className="flex items-center gap-3">
-          <input
-            type="text"
-            value={chatInput}
-            onChange={handleInputChange}
-            placeholder="Ask a question..."
-            className="flex-1 px-4 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button
-            onClick={() => handleSendMessage(chatInput)}
-            disabled={tutorInteractions <= 0}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
-          >
-            <Send className="w-5 h-5" />
-          </button>
-        </div>
-
-        <p className="text-sm text-gray-600">Interactions left: {tutorInteractions}</p>
-      </div>
+      {/* Tutor content */}
     </ContentCard>
   );
 
@@ -747,56 +485,7 @@ const LessonPage = () => {
       case 'quiz':
         return renderQuizTab();
       case 'exam':
-        return (
-          <ContentCard title="Final Exam">
-            <div className="mb-4 text-red-600 font-bold">Time Left: {examTimeLeft}s</div>
-            <div className="space-y-6">
-              {dynamicLessonContent.examContent.map((q, idx) => (
-                <div key={idx} className="p-6 bg-gray-50 rounded-xl">
-                  <p className="text-xl font-semibold mb-4">{q.question}</p>
-                  {q.type === 'multiple-choice' && (
-                    <div className="space-y-3">
-                      {q.options.map((opt, optIdx) => (
-                        <label
-                          key={optIdx}
-                          className="flex items-center space-x-3 p-3 bg-white rounded-lg hover:bg-blue-50 transition-colors cursor-pointer"
-                        >
-                          <input
-                            type="radio"
-                            value={opt}
-                            checked={responses[`exam-${idx}`] === opt}
-                            onChange={(e) =>
-                              setResponses((prev) => ({
-                                ...prev,
-                                [`exam-${idx}`]: e.target.value,
-                              }))
-                            }
-                            disabled={submitted.exam}
-                            className="w-4 h-4 text-blue-600"
-                          />
-                          <span className="text-gray-700">{opt}</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-
-              {submitted.exam ? (
-                <div className="p-6 bg-green-50 rounded-xl flex items-center justify-between">
-                  <p className="text-xl font-bold text-green-800">Your Score: {scores.exam || 0}%</p>
-                </div>
-              ) : (
-                <button
-                  onClick={() => handleSubmit('exam')}
-                  className="px-8 py-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all font-semibold"
-                >
-                  Submit Exam
-                </button>
-              )}
-            </div>
-          </ContentCard>
-        );
+        return examContent;
       case 'tutor':
         return renderTutorTab();
       default:
@@ -900,11 +589,36 @@ const LessonPage = () => {
     handleSubmit
   );
 
+  // New function to fetch exam data
+  const fetchExamData = async (examId: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await axios.post(`${BASE_URL}/get-exam`, { exam_id: examId });
+      if (response.data.success) {
+        setExamData(response.data.examData);
+      } else {
+        throw new Error(response.data.message || 'Failed to fetch exam data');
+      }
+    } catch (error) {
+      console.error('Error fetching exam data:', error);
+      setError(error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const examContent = (
+    <ContentCard title="Final Exam">
+      {/* Exam content */}
+    </ContentCard>
+  );
+
   return (
     <SimpleErrorBoundary>
       <DebugWrapper>
         <div className="min-h-screen bg-gray-100">
-          {!isLessonStarted ? (
+          {!lessonData ? (
             <StartScreen 
               handleStartLesson={handleStartLesson} 
               isLoading={isLoading}
@@ -927,11 +641,9 @@ const LessonPage = () => {
                       disabled={false} // Add the `disabled` prop
                       onClick={() => handleTabClick('quiz')}
                     >
-                      Quiz
-                    </TabButton>
                     <TabButton
                       active={activeTab === 'exam'}
-                      disabled={!lessonCompleted} // Add the `disabled` prop
+                      disabled={!isExamActive} // Disable during lessons
                       onClick={() => handleTabClick('exam')}
                     >
                       Exam
@@ -956,7 +668,7 @@ const LessonPage = () => {
                 <div className="grid grid-cols-1 gap-6">
                   <div className="bg-white rounded-xl shadow-lg p-8">
                     <h2 className="text-2xl font-bold mb-6 text-blue-600">Progress</h2>
-                    <Progress value={(timeSpent / 60) * 100} />
+                    <Progress value={(examTimeLeft / 60) * 100} />
                   </div>
 
                   {renderContent()}
@@ -975,5 +687,4 @@ export default LessonPage;
 interface SubmittedState {
   quiz?: boolean;
   exam?: boolean;
-  // Add other properties if needed
 }
